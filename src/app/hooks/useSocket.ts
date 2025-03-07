@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import io, { Socket as ClientSocket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import io from 'socket.io-client';
 import { Message, OutgoingMessage, MessageStatus } from '../types/message';
 import { useSession } from 'next-auth/react';
 
-let globalSocket: ClientSocket | null = null;
+let globalSocket: typeof Socket | null = null;
 const MESSAGE_HISTORY_LIMIT = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
@@ -18,6 +19,12 @@ interface QueuedMessage extends OutgoingMessage {
   localId: string;
 }
 
+interface ConnectionHealth {
+  status: 'healthy' | 'degraded' | 'error';
+  lastPing?: number;
+  lastError?: string;
+}
+
 export const useSocket = (
   roomId: string, 
   onMessageReceived: (message: Message) => void
@@ -25,6 +32,8 @@ export const useSocket = (
   const { data: session } = useSession();
   const [isConnected, setIsConnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [connectionHealth, setConnectionHealth] = useState<ConnectionHealth>({ status: 'healthy' });
+  const pingInterval = useRef<NodeJS.Timeout | undefined>(undefined);
   const [reconnectionAttempts, setReconnectionAttempts] = useState(0);
   const currentRoomRef = useRef(roomId);
   const processedMessages = useRef<Set<string>>(new Set());
@@ -35,17 +44,21 @@ export const useSocket = (
 
   const initSocket = useCallback(() => {
     if (!globalSocket) {
-      globalSocket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
-        path: '/socket.io',
+      const socketUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      globalSocket = io(socketUrl, {
+        path: '/api/socket',
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         timeout: 20000,
-        transports: ['websocket'],
+        transports: ['websocket', 'polling'],
+        auth: {
+          token: session?.user?.id
+        }
       });
     }
     return globalSocket;
-  }, []);
+  }, [session?.user?.id]);
 
   const logMessageStatus = useCallback((messageId: string, status: MessageStatus, error?: string) => {
     const timestamp = new Date().toISOString();
@@ -153,11 +166,16 @@ export const useSocket = (
       setIsConnected(true);
       setIsReconnecting(false);
       setReconnectionAttempts(0);
+      setConnectionHealth({ status: 'healthy', lastPing: Date.now() });
       
-      if (reconnectionTimer.current) {
-        clearTimeout(reconnectionTimer.current);
-        reconnectionTimer.current = null;
+      // Start ping interval
+      if (pingInterval.current) {
+        clearInterval(pingInterval.current);
       }
+      
+      pingInterval.current = setInterval(() => {
+        socket.emit('ping');
+      }, 25000);
       
       if (roomId) {
         await validateRoom();
@@ -207,7 +225,17 @@ export const useSocket = (
       }
     };
 
+    const handleConnectionDegraded = () => {
+      setConnectionHealth(prev => ({ ...prev, status: 'degraded' }));
+    };
+
+    const handlePong = () => {
+      setConnectionHealth(prev => ({ ...prev, status: 'healthy', lastPing: Date.now() }));
+    };
+
     socket.on('connect', handleConnect);
+    socket.on('connection:degraded', handleConnectionDegraded);
+    socket.on('pong', handlePong);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('message', handleMessage);
@@ -215,11 +243,16 @@ export const useSocket = (
     if (roomId) socket.emit('join', roomId);
 
     return () => {
+      if (pingInterval.current) {
+        clearInterval(pingInterval.current);
+      }
       if (reconnectionTimer.current) {
         clearTimeout(reconnectionTimer.current);
         reconnectionTimer.current = null;
       }
       socket.off('connect', handleConnect);
+      socket.off('connection:degraded', handleConnectionDegraded);
+      socket.off('pong', handlePong);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.off('message', handleMessage);
@@ -251,6 +284,7 @@ export const useSocket = (
   return { 
     sendMessage, 
     isConnected,
-    isReconnecting
+    isReconnecting,
+    connectionHealth
   };
 };
