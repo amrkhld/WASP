@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import io, { Socket as ClientSocket } from 'socket.io-client';
+import io, { Socket } from 'socket.io-client';
 import { Message, OutgoingMessage, MessageStatus } from '../types/message';
 import { useSession } from 'next-auth/react';
 
-let globalSocket: ClientSocket | null = null;
+let globalSocket: ReturnType<typeof io> | null = null;
 const MESSAGE_HISTORY_LIMIT = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
