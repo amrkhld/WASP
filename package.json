@@ -6,7 +6,6 @@
     "dev": "next dev",
     "socket": "node server.js",
     "dev:all": "concurrently \"npm run dev\" \"npm run socket\"",
-    "build": "next build",
     "start": "node server.js"
   },
   "dependencies": {
