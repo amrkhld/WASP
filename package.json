@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "socket": "node server.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run socket\""
+    "dev:all": "concurrently \"npm run dev\" \"npm run socket\"",
+    "start": "node server.js"
   },
   "dependencies": {
     "@next-auth/mongodb-adapter": "^1.1.3",
