@@ -2,7 +2,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { parse } = require('url');
 
-const port = process.env.SOCKET_PORT || 3001;
+const port = process.env.PORT || process.env.SOCKET_PORT || 3001;
 
 const httpServer = createServer((req, res) => {
   // Allow requests from the frontend domain
@@ -131,7 +131,7 @@ io.on('connection', (socket) => {
   });
 });
 
-httpServer.listen(port, () => {
+httpServer.listen(port, '0.0.0.0', () => {
   console.log(`Socket.IO server running on port ${port}`);
   console.log(`Allowing connections from: ${allowedOrigin}`);
 });

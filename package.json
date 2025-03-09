@@ -6,7 +6,8 @@
     "dev": "next dev",
     "socket": "node server.js",
     "build": "next build",
-    "start": "next start"
+    "start": "next start -p ${PORT:-3000}",
+    "start:all": "concurrently \"npm run start\" \"npm run socket\""
   },
   "dependencies": {
     "@next-auth/mongodb-adapter": "^1.1.3",
