@@ -4,22 +4,14 @@ import { useEffect, useCallback } from "react";
 import { useRadio } from "../contexts/RadioContext";
 import { useAudio } from "../contexts/AudioContext";
 import { RadioMode } from "../types/radio";
-
-const API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
-
-const CHANNEL_IDS = [
-  "UClB4Qjqka4uZrSaysagUa5Q",
-  "UCtwa2s4DB_D8fXniEv0rExw", 
-  "UCHwyUZ5O4by-pcE-6j01miA",
-  "UC7cUbKTcWtuEaLua-o6HSzw",
-];
+import { YouTubePlayerState } from "../types/youtube";
 
 interface RadioProps {
   mode: RadioMode;
   roomName?: string;
 }
 
-export default function Radio({ mode, roomName }: RadioProps) {
+export default function Radio({ mode }: RadioProps) {
   const {
     currentStream,
     player,
@@ -72,15 +64,13 @@ export default function Radio({ mode, roomName }: RadioProps) {
         throw new Error('Player container not found');
       }
 
-      // Clean up existing player if any
       if (player) {
         player.destroy();
         setPlayer(null);
         setPlayerReady(false);
       }
 
-      // Create player with explicit origin
-      const newPlayer = new window.YT.Player(containerId, {
+      const playerInstance = new window.YT.Player(containerId, {
         videoId: currentStream.id.videoId,
         playerVars: {
           autoplay: 1,
@@ -98,39 +88,37 @@ export default function Radio({ mode, roomName }: RadioProps) {
         },
         events: {
           onReady: (event) => {
-            const player = event.target;
-            // Set volume and mute state after player is ready
+            const playerRef = event.target;
             if (isMuted) {
-              player.mute();
+              playerRef.mute();
             } else {
-              player.unMute();
-              player.setVolume(100);
+              playerRef.unMute();
+              playerRef.setVolume(100);
             }
-            setPlayer(player);
+            setPlayer(playerRef);
             setPlayerReady(true);
             setIsLoading(false);
           },
           onStateChange: (event) => {
-            // Handle state changes only when player is ready
-            if (playerReady && event.data === YT.PlayerState.ENDED) {
+            if (playerReady && event.data === YouTubePlayerState.ENDED) {
               fetchRandomStream();
             }
           },
-          onError: (event) => {
-            console.error('YouTube player error:', event);
-            // Only fetch new stream if player is ready
+          onError: () => {
+            console.error('YouTube player error');
             if (playerReady) {
               fetchRandomStream();
             }
           }
         }
       });
+      setPlayer(playerInstance);
     } catch (err) {
       console.error('Player initialization error:', err);
       setError('Failed to initialize YouTube player');
       throw err;
     }
-  }, [isMuted, setPlayer, setPlayerReady, setIsLoading]);
+  }, [currentStream, isMuted, player, playerReady, setPlayer, setPlayerReady, setIsLoading, setError, fetchRandomStream]);
 
   useEffect(() => {
     if (currentStream?.id.videoId) {
@@ -150,40 +138,11 @@ export default function Radio({ mode, roomName }: RadioProps) {
       const firstScriptTag = document.getElementsByTagName("script")[0];
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
 
-      // Set onYouTubeIframeAPIReady before adding script
       window.onYouTubeIframeAPIReady = () => {
-        window.onYouTubeIframeAPIReady = undefined; // Clean up
+        window.onYouTubeIframeAPIReady = undefined;
         resolve();
       };
     });
-  };
-
-  const fetchVideos = async (channelId: string) => {
-    try {
-
-      const now = new Date();
-      const randomMonths = Math.floor(Math.random() * 60);
-      const randomDate = new Date(now.setMonth(now.getMonth() - randomMonths));
-      const publishedAfter = randomDate.toISOString();
-
-  
-      const orders = ['date', 'rating', 'viewCount'];
-      const randomOrder = orders[Math.floor(Math.random() * orders.length)];
-
-      const res = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&key=${API_KEY}&maxResults=50&order=${randomOrder}&publishedAfter=${publishedAfter}`
-      );
-      
-      const data = await res.json();
-      
- 
-      const shuffledItems = data.items ? [...data.items].sort(() => Math.random() - 0.5) : [];
-      
-      return shuffledItems;
-    } catch (error) {
-      console.error(`Error fetching channel ${channelId}:`, error);
-      return [];
-    }
   };
 
   const toggleMute = () => {
@@ -194,7 +153,6 @@ export default function Radio({ mode, roomName }: RadioProps) {
 
     try {
       const newMuteState = !isMuted;
-      // Only attempt to change mute state if player is ready
       if (playerReady) {
         if (newMuteState) {
           player.mute();

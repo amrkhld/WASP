@@ -108,16 +108,28 @@ const ChatBox: React.FC<ChatBoxProps> = ({
             <p className="no-messages">VACANT NESTING ZONE</p>
           ) : (
             <>
-              {messages.map((message) => (
-                <div 
-                  key={getMessageKey(message)}
-                  className={`message ${message.userId === session?.user?.id ? 'message-own' : ''}`}
-                >
-                  <span className="message-user">{message.userName || 'User'}&nbsp;&nbsp;| </span>
-                  <span className="message-content">{message.content}</span>
-                  <span className="message-timestamp">{formatMessageTime(message.timestamp)}</span>
-                </div>
-              ))}
+              {messages.map((message) => {
+                const queuedMessage = messageQueue[message.messageId];
+                const messageStatus = queuedMessage?.status;
+                
+                return (
+                  <div 
+                    key={getMessageKey(message)}
+                    className={`message ${message.userId === session?.user?.id ? 'message-own' : ''}`}
+                  >
+                    <span className="message-user">{message.userName || 'User'}&nbsp;&nbsp;| </span>
+                    <span className="message-content">{message.content}</span>
+                    <span className="message-meta">
+                      <span className="message-timestamp">{formatMessageTime(message.timestamp)}</span>
+                      {messageStatus && (
+                        <span className={`message-status ${messageStatus}`}>
+                          {messageStatus === 'pending' ? '⌛' : messageStatus === 'delivered' ? '✓' : '⚠️'}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
               <div ref={messagesEndRef} /> 
             </>
           )}

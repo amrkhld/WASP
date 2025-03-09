@@ -15,6 +15,16 @@ interface Room {
   name: string;
 }
 
+interface MessageResponse {
+  _id: string;
+  id: string;
+  content: string;
+  roomId: string;
+  userId: string;
+  userName: string;
+  timestamp: string;
+}
+
 const HomePage = () => {
   const { data: session, status } = useSession();
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
@@ -31,17 +41,6 @@ const HomePage = () => {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-  
-  const handleMessageReceived = useCallback((message: Message) => {
-    setMessages(prev => {
-
-      const isDuplicate = prev.some(m => m.messageId === message.messageId);
-      if (isDuplicate) return prev;
-      return [...prev, message].sort((a, b) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
-    });
   }, []);
 
   const { sendMessage, isConnected, messageQueue } = useSocket({
@@ -67,13 +66,14 @@ const HomePage = () => {
       }
       const data = await response.json();
 
-      const typedMessages: Message[] = data.map((msg: any) => ({
+      const typedMessages: Message[] = data.map((msg: MessageResponse) => ({
         id: msg._id || msg.id,
         content: msg.content,
         roomId: msg.roomId,
         userId: msg.userId,
         userName: msg.userName || 'Unknown User',
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
+        messageId: msg._id
       }));
       setMessages(typedMessages);
     } catch (error) {

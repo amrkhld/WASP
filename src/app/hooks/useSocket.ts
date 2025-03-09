@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Socket, Manager } from 'socket.io-client';
-import type { Message, MessageStatus } from '../types/message';
+import type { Message } from '../types/message';
 
 interface UseSocketProps {
   roomId: string;
@@ -29,7 +29,7 @@ export const useSocket = ({ roomId, userId }: UseSocketProps) => {
       const newQueue = { ...prevQueue };
       let hasChanges = false;
 
-      Object.entries(newQueue).forEach(([messageId, entry]) => {
+      Object.entries(newQueue).forEach(([, entry]) => {
         if (entry.status === 'pending' && currentTime - entry.timestamp > 5000) {
           entry.status = 'failed';
           hasChanges = true;
