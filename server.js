@@ -5,9 +5,12 @@ const { parse } = require('url');
 const port = process.env.SOCKET_PORT || 3001;
 
 const httpServer = createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // Allow requests from the frontend domain
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
@@ -26,10 +29,14 @@ const httpServer = createServer((req, res) => {
   res.end();
 });
 
+const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+console.log('Allowing CORS from origin:', allowedOrigin);
+
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
-    methods: ["GET", "POST"],
+    origin: allowedOrigin,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   },
   path: '/socket.io/', 
@@ -126,4 +133,5 @@ io.on('connection', (socket) => {
 
 httpServer.listen(port, () => {
   console.log(`Socket.IO server running on port ${port}`);
+  console.log(`Allowing connections from: ${allowedOrigin}`);
 });
