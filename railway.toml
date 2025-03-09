@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm run build"
+
+[deploy]
+startCommand = "npm run railway"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10
