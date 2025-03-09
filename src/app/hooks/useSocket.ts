@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Socket, Manager } from 'socket.io-client';
+import socketio from 'socket.io-client';
 import type { Message } from '../types/message';
 
 interface UseSocketProps {
@@ -21,7 +21,7 @@ export const useSocket = ({ roomId, userId }: UseSocketProps) => {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageQueue, setMessageQueue] = useState<MessageQueue>({});
-  const socketRef = useRef<typeof Socket | null>(null);
+  const socketRef = useRef<ReturnType<typeof socketio> | null>(null);
   const messageCountRef = useRef(0);
 
   const processMessageQueue = useCallback((currentTime: number) => {
@@ -42,10 +42,9 @@ export const useSocket = ({ roomId, userId }: UseSocketProps) => {
 
   const connect = useCallback(() => {
     if (!socketRef.current) {
-      const manager = new Manager(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
+      const socket = socketio(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
         query: { roomId, userId }
       });
-      const socket = manager.socket('/');
 
       socket.on('connect', () => {
         setIsConnected(true);
