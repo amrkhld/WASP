@@ -1,100 +1,95 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
 
-export default function SignupPage() {
-    const router = useRouter();
-    const [error, setError] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
+interface SignupData {
+  name: string;
+  email: string;
+  password: string;
+}
 
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        if (isLoading) return;
-        
-        setIsLoading(true);
-        setError(null);
+export default function SignUp() {
+  const [formData, setFormData] = useState<SignupData>({
+    name: '',
+    email: '',
+    password: ''
+  });
+  const [error, setError] = useState<string>('');
+  const router = useRouter();
 
-        const formData = new FormData(e.currentTarget);
-        const name = formData.get('name')?.toString().trim();
-        const email = formData.get('email')?.toString().trim();
-        const password = formData.get('password')?.toString();
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
 
- 
-        if (!name || !email || !password) {
-            setError('Please fill in all fields');
-            setIsLoading(false);
-            return;
-        }
+    try {
+      const response = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
 
-        if (password.length < 8) {
-            setError('Password must be at least 8 characters long');
-            setIsLoading(false);
-            return;
-        }
+      const data = await response.json();
 
-        try {
-            const res = await fetch('/api/auth/signup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, email, password }),
-            });
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to sign up');
+      }
 
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.message || 'Something went wrong');
-            }
+      router.push('/auth/login?registered=true');
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
+    }
+  };
 
-            router.push('/auth/login');
-        } catch (error: any) {
-            setError(error.message);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <div className="auth-container">
-            <div className="auth-content">
-                <h2 className="auth-title">Create Account</h2>
-                <form className="auth-form" onSubmit={handleSubmit}>
-                    {error && <div className="auth-error">{error}</div>}
-                    <input
-                        type="text"
-                        name="name"
-                        className="auth-input"
-                        placeholder="Full name"
-                        required
-                    />
-                    <input
-                        type="email"
-                        name="email"
-                        className="auth-input"
-                        placeholder="Email address"
-                        required
-                    />
-                    <input
-                        type="password"
-                        name="password"
-                        className="auth-input"
-                        placeholder="Password"
-                        required
-                    />
-                    <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="auth-button"
-                    >
-                        {isLoading ? 'Creating account...' : 'Sign up'}
-                    </button>
-                    <div className="auth-link">
-                        <a href="/auth/login">Already have an account? Sign in</a>
-                    </div>
-                </form>
-            </div>
-            <div className="auth-logo">
-                <img src="/assests/logo.png" alt="Logo" />
-            </div>
+  return (
+    <div className="auth-container">
+      <div className="logo-container">
+        <Image
+          src="/assets/logo.png"
+          alt="Logo"
+          width={48}
+          height={48}
+          priority
+        />
+      </div>
+      <h1>FREQUENCY NESTS</h1>
+      <div className="auth-box">
+        <h2>CREATE ACCESS</h2>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="ENTER CALL SIGN"
+            required
+          />
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="ENTER EMAIL"
+            required
+          />
+          <input
+            type="password"
+            value={formData.password}
+            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+            placeholder="ENTER ACCESS CODE"
+            required
+          />
+          {error && <div className="error-message">{error}</div>}
+          <button type="submit">CREATE ACCESS</button>
+        </form>
+        <div className="auth-links">
+          <Link href="/auth/login">RETURN TO ACCESS</Link>
         </div>
-    );
+      </div>
+    </div>
+  );
 }

@@ -18,7 +18,7 @@ export interface MessageInput {
   roomId: string;
 }
 
-export type MessageStatus = 'pending' | 'sent' | 'failed';
+export type MessageStatus = 'pending' | 'delivered' | 'failed';
 
 export interface MessageError {
   messageId?: string;
@@ -30,4 +30,12 @@ export interface OutgoingMessage extends BaseMessage {
   id?: string;
   status?: MessageStatus;
   error?: string;
+}
+
+export interface MessageQueue {
+  [key: string]: {
+    message: Message;
+    status: MessageStatus;
+    timestamp: number;
+  };
 }

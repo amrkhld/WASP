@@ -38,7 +38,8 @@ export async function POST(request: Request) {
       id: newMessage._id.toString(),
       messageId  
     }, { status: 201 });
-  } catch (error) {
+  } catch (err) {
+    console.error('Error sending message:', err);
     return NextResponse.json(
       { error: "Error sending message" },
       { status: 500 }

@@ -3,13 +3,11 @@ import React from 'react';
 interface ConnectionStatusProps {
   isConnected: boolean;
   messageCount?: number;
-  lastMessageId?: string | null;
 }
 
 const ConnectionStatus: React.FC<ConnectionStatusProps> = ({ 
   isConnected, 
-  messageCount = 0,
-  lastMessageId 
+  messageCount = 0
 }) => {
   return (
     <div className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>

@@ -1,15 +1,43 @@
-export interface YouTubeStream {
-  id: {
-    videoId: string;
+export interface YouTubeStreamId {
+  kind: string;
+  videoId: string;
+}
+
+export interface YouTubeStreamSnippet {
+  publishedAt: string;
+  channelId: string;
+  title: string;
+  description: string;
+  thumbnails: {
+    default: YouTubeThumbnail;
+    medium: YouTubeThumbnail;
+    high: YouTubeThumbnail;
   };
-  snippet: {
-    title: string;
-    channelTitle: string;
-    thumbnails: {
-      default: {
-        url: string;
-      };
-    };
+  channelTitle: string;
+  liveBroadcastContent: string;
+  publishTime: string;
+}
+
+export interface YouTubeThumbnail {
+  url: string;
+  width: number;
+  height: number;
+}
+
+export interface YouTubeStream {
+  kind: string;
+  etag: string;
+  id: YouTubeStreamId;
+  snippet: YouTubeStreamSnippet;
+}
+
+export interface YouTubeSearchResponse {
+  kind: string;
+  etag: string;
+  items: YouTubeStream[];
+  pageInfo: {
+    totalResults: number;
+    resultsPerPage: number;
   };
 }
 

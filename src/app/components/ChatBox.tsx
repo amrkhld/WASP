@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Message } from '../types/message';
+import type { MessageQueue } from '../types/message';
 import Radio from './Radio';
 import ConnectionStatus from './ConnectionStatus';
 
@@ -10,6 +11,7 @@ interface ChatBoxProps {
   isLoading?: boolean;
   isConnected?: boolean;
   isReconnecting?: boolean;
+  messageQueue: MessageQueue;
   onOpenRooms?: () => void;
   isSidePanelOpen?: boolean;
 }
@@ -20,6 +22,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   isLoading = false,
   isConnected = false,
   isReconnecting = false,
+  messageQueue,
   onOpenRooms,
   isSidePanelOpen = false
 }) => {

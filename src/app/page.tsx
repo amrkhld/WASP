@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { useSession } from 'next-auth/react';
 import { redirect } from 'next/navigation';
 import { useSocket } from './hooks/useSocket';
@@ -43,11 +44,10 @@ const HomePage = () => {
     });
   }, []);
 
-  const { sendMessage, isConnected, isReconnecting } = useSocket(
-    selectedRoom?._id || '',
-    handleMessageReceived
-  );
-
+  const { sendMessage, isConnected, messageQueue } = useSocket({
+    roomId: selectedRoom?._id || '',
+    userId: session?.user?.id || ''
+  });
 
   if (status === "unauthenticated") {
     redirect("/auth/login");
@@ -150,13 +150,13 @@ const HomePage = () => {
               roomName={selectedRoom?.name}
               isLoading={isLoading}
               isConnected={isConnected}
-              isReconnecting={isReconnecting}
+              messageQueue={messageQueue}
               onOpenRooms={toggleSidePanel}
               isSidePanelOpen={isSidePanelOpen}
             />
             <MessageInput 
               onSend={handleSendMessage}    
-              disabled={!selectedRoom || !isConnected || isReconnecting}
+              disabled={!selectedRoom || !isConnected}
             />
           </div>
         </div>
@@ -172,7 +172,7 @@ const HomePage = () => {
         >
           <div className="side-panel-content">
             <div className="logo-container">
-              <img src="/assests/logoAlter.png" alt="Logo" />
+              <Image src="/assets/logoAlter.png" alt="Logo" width={48} height={48} />
             </div>
             <ChatRooms 
               onRoomSelect={handleRoomSelect} 

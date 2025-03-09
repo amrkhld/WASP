@@ -1,256 +1,146 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
-import io, { Socket } from 'socket.io-client';
-import { Message, OutgoingMessage, MessageStatus } from '../types/message';
-import { useSession } from 'next-auth/react';
+'use client';
 
-let globalSocket: ReturnType<typeof io> | null = null;
-const MESSAGE_HISTORY_LIMIT = 100;
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 2000;
-const RECONNECTION_ATTEMPTS = 5;
-const RECONNECTION_INTERVAL = 3000;
-const ACK_TIMEOUT = 5000;
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { Socket, Manager } from 'socket.io-client';
+import type { Message, MessageStatus } from '../types/message';
 
-interface QueuedMessage extends OutgoingMessage {
-  attempts: number;
-  lastAttempt: number;
-  status: MessageStatus;
-  localId: string;
+interface UseSocketProps {
+  roomId: string;
+  userId: string;
 }
 
-export const useSocket = (
-  roomId: string, 
-  onMessageReceived: (message: Message) => void
-) => {
-  const { data: session } = useSession();
+interface MessageQueue {
+  [key: string]: {
+    message: Message;
+    status: 'pending' | 'delivered' | 'failed';
+    timestamp: number;
+  };
+}
+
+export const useSocket = ({ roomId, userId }: UseSocketProps) => {
   const [isConnected, setIsConnected] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
-  const [reconnectionAttempts, setReconnectionAttempts] = useState(0);
-  const currentRoomRef = useRef(roomId);
-  const processedMessages = useRef<Set<string>>(new Set());
-  const messageQueue = useRef<QueuedMessage[]>([]);
-  const failedMessages = useRef<QueuedMessage[]>([]);
-  const processingQueue = useRef(false);
-  const reconnectionTimer = useRef<NodeJS.Timeout | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageQueue, setMessageQueue] = useState<MessageQueue>({});
+  const socketRef = useRef<typeof Socket | null>(null);
+  const messageCountRef = useRef(0);
 
-  const initSocket = useCallback(() => {
-    if (!globalSocket) {
-      globalSocket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
-        path: '/socket.io',
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 5000,
-        timeout: 20000,
-        transports: ['websocket'],
+  const processMessageQueue = useCallback((currentTime: number) => {
+    setMessageQueue(prevQueue => {
+      const newQueue = { ...prevQueue };
+      let hasChanges = false;
+
+      Object.entries(newQueue).forEach(([messageId, entry]) => {
+        if (entry.status === 'pending' && currentTime - entry.timestamp > 5000) {
+          entry.status = 'failed';
+          hasChanges = true;
+        }
       });
-    }
-    return globalSocket;
-  }, []);
 
-  const logMessageStatus = useCallback((messageId: string, status: MessageStatus, error?: string) => {
-    const timestamp = new Date().toISOString();
-    switch (status) {
-      case 'pending':
-        console.log(`[${timestamp}] Message ${messageId}: Attempting to send...`);
-        break;
-      case 'sent':
-        console.log(`[${timestamp}] Message ${messageId}: Successfully delivered ✓`);
-        break;
-      case 'failed':
-        console.error(`[${timestamp}] Message ${messageId}: Failed to send - ${error || 'Unknown error'}`);
-        break;
-    }
-  }, []);
-
-  const handleReconnection = useCallback(() => {
-    if (reconnectionAttempts >= RECONNECTION_ATTEMPTS) {
-      console.error('[Socket] Max reconnection attempts reached');
-      setIsReconnecting(false);
-      return;
-    }
-
-    console.log(`[Socket] Attempting to reconnect (${reconnectionAttempts + 1}/${RECONNECTION_ATTEMPTS})`);
-    globalSocket?.connect();
-    setReconnectionAttempts(prev => prev + 1);
-  }, [reconnectionAttempts]);
-
-  const validateRoom = useCallback(async () => {
-    if (!roomId || !globalSocket) return false;
-    
-    return new Promise<boolean>((resolve) => {
-      globalSocket!.emit('join', roomId, (response: { success: boolean }) => {
-        resolve(response.success);
-      });
+      return hasChanges ? newQueue : prevQueue;
     });
-  }, [roomId]);
+  }, []);
 
-  const processMessageQueue = useCallback(() => {
-    if (processingQueue.current || !isConnected) return;
-    processingQueue.current = true;
+  const connect = useCallback(() => {
+    if (!socketRef.current) {
+      const manager = new Manager(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
+        query: { roomId, userId }
+      });
+      const socket = manager.socket('/');
 
-    const processNextMessage = async () => {
-      if (!isConnected || messageQueue.current.length === 0) {
-        processingQueue.current = false;
+      socket.on('connect', () => {
+        setIsConnected(true);
+      });
+
+      socket.on('disconnect', () => {
+        setIsConnected(false);
+      });
+
+      socket.on('messages', (messages: Message[]) => {
+        setMessages(messages);
+      });
+
+      socket.on('message', (message: Message) => {
+        setMessages(prev => [...prev, message]);
+        messageCountRef.current += 1;
+      });
+
+      socket.on('messageAck', (messageId: string) => {
+        setMessageQueue(prev => {
+          const newQueue = { ...prev };
+          if (newQueue[messageId]) {
+            newQueue[messageId].status = 'delivered';
+          }
+          return newQueue;
+        });
+      });
+
+      socketRef.current = socket;
+    }
+  }, [roomId, userId]);
+
+  const disconnect = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
+
+  const sendMessage = useCallback((content: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (!socketRef.current?.connected) {
+        reject(new Error('Socket not connected'));
         return;
       }
 
-      const msg = messageQueue.current[0];
-      
-      const handleResponse = (response: { success: boolean, error?: string, messageData?: any }) => {
-        if (response.success) {
-        
-          messageQueue.current.shift();
-          const messageToProcess = response.messageData || {
-            ...msg,
-            timestamp: new Date().toISOString()
-          };
-          onMessageReceived(messageToProcess);
-        } else {
-          console.error(`[Socket] Message failed:`, response.error);
-          if (msg.attempts >= MAX_RETRIES) {
-            messageQueue.current.shift();
-            failedMessages.current.push(msg);
-          }
-        }
-        
-       
-        processNextMessage();
+      const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const message: Message = {
+        id: messageId,
+        content,
+        userId,
+        userName: 'User', // This should be set by the server
+        roomId,
+        timestamp: new Date().toISOString(),
+        messageId
       };
 
-      try {
-        msg.attempts += 1;
-        globalSocket?.emit('message', msg, handleResponse);
-      } catch (error) {
-        console.error('[Socket] Error sending message:', error);
-        processNextMessage();
-      }
-    };
+      setMessageQueue(prev => ({
+        ...prev,
+        [messageId]: {
+          message,
+          status: 'pending',
+          timestamp: Date.now()
+        }
+      }));
 
-    processNextMessage();
-  }, [isConnected, onMessageReceived]);
-
-  const retryFailedMessages = useCallback(() => {
-    console.log(`[Socket] Retrying ${failedMessages.current.length} failed messages`);
-    
-  
-    messageQueue.current = [
-      ...failedMessages.current,
-      ...messageQueue.current
-    ];
-    failedMessages.current = [];
-    
-    if (isConnected) {
-      processMessageQueue();
-    }
-  }, [isConnected]);
+      socketRef.current.emit('message', message, (response: { success: boolean }) => {
+        if (response.success) {
+          resolve();
+        } else {
+          reject(new Error('Failed to send message'));
+        }
+      });
+    });
+  }, [roomId, userId]);
 
   useEffect(() => {
-    const socket = initSocket();
-    currentRoomRef.current = roomId;
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
 
-    const handleConnect = async () => {
-      console.log('[Socket] Connected successfully');
-      setIsConnected(true);
-      setIsReconnecting(false);
-      setReconnectionAttempts(0);
-      
-      if (reconnectionTimer.current) {
-        clearTimeout(reconnectionTimer.current);
-        reconnectionTimer.current = null;
-      }
-      
-      if (roomId) {
-        await validateRoom();
-      }
-      
-      if (failedMessages.current.length > 0) {
-        retryFailedMessages();
-      }
-      
-      processMessageQueue();
-    };
+  useEffect(() => {
+    const interval = setInterval(() => {
+      processMessageQueue(Date.now());
+    }, 1000);
 
-    const handleDisconnect = (reason: string) => {
-      console.log('[Socket] Disconnected:', reason);
-      setIsConnected(false);
-      
-      
-      if (reason === 'io client disconnect') {
-        return;
-      }
-      
-      setIsReconnecting(true);
-      reconnectionTimer.current = setTimeout(handleReconnection, RECONNECTION_INTERVAL);
-    };
+    return () => clearInterval(interval);
+  }, [processMessageQueue]);
 
-    const handleConnectError = (error: Error) => {
-      console.error('[Socket] Connection error:', error.message);
-      setIsReconnecting(true);
-      
-      if (!reconnectionTimer.current) {
-        reconnectionTimer.current = setTimeout(handleReconnection, RECONNECTION_INTERVAL);
-      }
-    };
-
-    const handleMessage = (message: Message) => {
-      if (message.roomId === currentRoomRef.current) {
-        if (!processedMessages.current.has(message.messageId)) {
-          processedMessages.current.add(message.messageId);
-          onMessageReceived(message);
-
-     
-          if (processedMessages.current.size > MESSAGE_HISTORY_LIMIT) {
-            const [firstMessage] = processedMessages.current;
-            processedMessages.current.delete(firstMessage);
-          }
-        }
-      }
-    };
-
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
-    socket.on('message', handleMessage);
-
-    if (roomId) socket.emit('join', roomId);
-
-    return () => {
-      if (reconnectionTimer.current) {
-        clearTimeout(reconnectionTimer.current);
-        reconnectionTimer.current = null;
-      }
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
-      socket.off('message', handleMessage);
-    };
-  }, [roomId, onMessageReceived, initSocket, processMessageQueue, handleReconnection, retryFailedMessages, validateRoom]);
-
-  const sendMessage = useCallback((content: string) => {
-    if (!session?.user) return;
-
-    const messageData: QueuedMessage = {
-      roomId,
-      content,
-      userId: session.user.id,
-      userName: session.user.name || 'Anonymous',
-      timestamp: new Date().toISOString(),
-      messageId: crypto.randomUUID(),
-      attempts: 0,
-      lastAttempt: 0,
-      status: 'pending',
-      localId: crypto.randomUUID(),
-    };
-
-    messageQueue.current.push(messageData);
-    processMessageQueue();
-    
-    return messageData.messageId;
-  }, [roomId, session, processMessageQueue]);
-
-  return { 
-    sendMessage, 
+  return {
     isConnected,
-    isReconnecting
+    messages,
+    sendMessage,
+    messageQueue,
+    messageCount: messageCountRef.current
   };
 };

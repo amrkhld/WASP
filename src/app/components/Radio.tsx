@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useCallback } from "react";
 import { useRadio } from "../contexts/RadioContext";
 import { useAudio } from "../contexts/AudioContext";
 import { RadioMode } from "../types/radio";
@@ -34,84 +34,29 @@ export default function Radio({ mode, roomName }: RadioProps) {
   } = useRadio();
   const { isMuted, setIsMuted } = useAudio();
 
- 
-  useEffect(() => {
-    let mounted = true;
-
-    const initialize = async () => {
-      if (!currentStream) {
-        try {
-          setIsLoading(true);
-          await fetchRandomStream();
-        } catch (err) {
-          console.error('Initialization error:', err);
-          if (mounted) setError('Failed to load stream');
-        } finally {
-          if (mounted) setIsLoading(false);
-        }
-      }
-    };
-
-    initialize();
-    return () => { mounted = false; };
-  }, []); 
-
+  const fetchRandomStream = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await fetch('/api/youtube/random');
+      if (!response.ok) throw new Error('Failed to fetch stream');
+      const data = await response.json();
+      setCurrentStream(data);
+    } catch (error) {
+      console.error('Error fetching stream:', error);
+      setError('Failed to fetch stream');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [setCurrentStream, setError, setIsLoading]);
 
   useEffect(() => {
-    let mounted = true;
+    if (!currentStream) {
+      fetchRandomStream();
+    }
+  }, [currentStream, fetchRandomStream]);
 
-    const setupPlayer = async () => {
-      if (!currentStream) return;
-
-      try {
-      
-        if (player) {
-          player.destroy();
-          setPlayer(null);
-          setPlayerReady(false);
-        }
-
-        await initializePlayer();
-      } catch (err) {
-        console.error('Player setup error:', err);
-        if (mounted) setError('Failed to initialize player');
-      }
-    };
-
-    setupPlayer();
-
-    return () => {
-      mounted = false;
-    
-      if (player) {
-        player.destroy();
-        setPlayer(null);
-        setPlayerReady(false);
-      }
-    };
-  }, [currentStream?.id.videoId]); 
-
-  const loadYouTubeAPI = () => {
-    return new Promise<void>((resolve) => {
-      if (window.YT) {
-        resolve();
-        return;
-      }
-
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      const firstScriptTag = document.getElementsByTagName("script")[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-
-      // Set onYouTubeIframeAPIReady before adding script
-      window.onYouTubeIframeAPIReady = () => {
-        window.onYouTubeIframeAPIReady = undefined; // Clean up
-        resolve();
-      };
-    });
-  };
-
-  const initializePlayer = async () => {
+  const initializePlayer = useCallback(async () => {
     if (!currentStream) return;
     
     try {
@@ -185,6 +130,32 @@ export default function Radio({ mode, roomName }: RadioProps) {
       setError('Failed to initialize YouTube player');
       throw err;
     }
+  }, [isMuted, setPlayer, setPlayerReady, setIsLoading]);
+
+  useEffect(() => {
+    if (currentStream?.id.videoId) {
+      initializePlayer();
+    }
+  }, [currentStream?.id.videoId, initializePlayer]);
+
+  const loadYouTubeAPI = () => {
+    return new Promise<void>((resolve) => {
+      if (window.YT) {
+        resolve();
+        return;
+      }
+
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName("script")[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+
+      // Set onYouTubeIframeAPIReady before adding script
+      window.onYouTubeIframeAPIReady = () => {
+        window.onYouTubeIframeAPIReady = undefined; // Clean up
+        resolve();
+      };
+    });
   };
 
   const fetchVideos = async (channelId: string) => {
@@ -212,24 +183,6 @@ export default function Radio({ mode, roomName }: RadioProps) {
     } catch (error) {
       console.error(`Error fetching channel ${channelId}:`, error);
       return [];
-    }
-  };
-
-  const fetchRandomStream = async () => {
-    try {
-
-      const randomChannel =
-        CHANNEL_IDS[Math.floor(Math.random() * CHANNEL_IDS.length)];
-
-
-      const videos = await fetchVideos(randomChannel);
-
-      if (videos.length > 0) {
-        const randomVideo = videos[Math.floor(Math.random() * videos.length)];
-        setCurrentStream(randomVideo);
-      }
-    } catch (error) {
-      console.error("Error fetching stream:", error);
     }
   };
 

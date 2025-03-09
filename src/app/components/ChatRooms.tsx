@@ -19,7 +19,6 @@ interface ChatRoomsProps {
 
 const ChatRooms: React.FC<ChatRoomsProps> = ({ onRoomSelect, onClose }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
@@ -33,8 +32,6 @@ const ChatRooms: React.FC<ChatRoomsProps> = ({ onRoomSelect, onClose }) => {
       setRooms(response.data);
     } catch (error) {
       console.error('Error fetching rooms:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -66,9 +63,11 @@ const ChatRooms: React.FC<ChatRoomsProps> = ({ onRoomSelect, onClose }) => {
         onRoomSelect(selectedRoom);
         setSelectedRoom(null);
       }
-    } catch (error: any) {
-      console.error('Error joining protected room:', error);
-      if (error.response?.status === 401) {
+    } catch (err) {
+      console.error('Error joining protected room:', err);
+      // Use type assertion for axios error
+      const axiosError = err as { response?: { status: number } };
+      if (axiosError.response?.status === 401) {
         alert('Incorrect password');
       }
     }

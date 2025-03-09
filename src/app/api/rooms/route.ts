@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import dbConnect from "dbConnect";
-import { Room } from "@/app/models/Room";
+import { Room, IRoom } from "@/app/models/Room";
 import bcrypt from 'bcryptjs';
 
 export async function GET() {
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const roomData: any = { name, isProtected };
+    const roomData: Partial<IRoom> = { name, isProtected };
     
     if (isProtected && password) {
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -38,7 +38,9 @@ export async function POST(request: Request) {
 
     const newRoom = await Room.create(roomData);
     
-    const { password: _, ...roomResponse } = newRoom.toObject();
+    const roomResponse = newRoom.toObject();
+    delete roomResponse.password;
+    
     return NextResponse.json(roomResponse, { status: 201 });
   } catch (error) {
     console.error('Error creating room:', error);

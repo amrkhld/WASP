@@ -1,8 +1,8 @@
-
 'use client';
 import { signIn } from 'next-auth/react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -81,7 +81,7 @@ export default function LoginPage() {
                 </form>
             </div>
             <div className="auth-logo">
-                <img src="/assests/logo.png" alt="Logo" />
+                <Image src="/assests/logo.png" alt="Logo" width={48} height={48} priority />
             </div>
         </div>
     );
