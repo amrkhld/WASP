@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoClient } from 'mongodb';
+import { logger } from './src/app/utils/logger';
 
 const MONGODB_URI = process.env.MONGODB_URI!;
 
@@ -9,54 +10,83 @@ if (!MONGODB_URI) {
 
 let isConnected = false;
 let cachedClient: MongoClient | null = null;
-let connectionRetries = 0;
+let isConnecting = false;
 const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000;
 
-export async function connectToDatabase() {
-  if (cachedClient && isConnected) {
-    return { client: cachedClient, db: cachedClient.db() };
-  }
-
+async function connectWithRetry(retries = MAX_RETRIES): Promise<MongoClient> {
   try {
-    if (connectionRetries >= MAX_RETRIES) {
-      throw new Error('Max connection retries reached');
+    if (cachedClient) {
+      return cachedClient;
     }
 
-    const client = await MongoClient.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000
-    });
-    
+    if (isConnecting) {
+      logger.debug('Connection already in progress, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return connectWithRetry(retries);
+    }
 
+    isConnecting = true;
+    logger.info('Connecting to MongoDB...');
+    
+    const client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    
     await client.db().command({ ping: 1 });
     
-    await mongoose.connect(MONGODB_URI);
-    isConnected = true;
     cachedClient = client;
-    connectionRetries = 0;
-    console.log('Connected to MongoDB');
-    return { client, db: client.db() };
-  } catch (error) {
-    connectionRetries++;
-    console.error(`MongoDB connection error (attempt ${connectionRetries}):`, error);
-    if (cachedClient) {
-      await cachedClient.close();
+    isConnecting = false;
+    logger.info('Successfully connected to MongoDB');
+    
+    client.on('close', () => {
+      logger.warn('MongoDB connection closed');
       cachedClient = null;
+    });
+    
+    client.on('error', (error: Error) => {
+      logger.error('MongoDB connection error', { error: error.message });
+      cachedClient = null;
+    });
+
+    return client;
+
+  } catch (error: unknown) {
+    isConnecting = false;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('MongoDB connection failed', { 
+      error: errorMessage, 
+      retriesLeft: retries 
+    });
+
+    if (retries > 0) {
+      logger.info(`Retrying connection in ${RETRY_DELAY}ms...`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return connectWithRetry(retries - 1);
     }
-    isConnected = false;
+
+    throw new Error(`Failed to connect to MongoDB after ${MAX_RETRIES} attempts`);
+  }
+}
+
+export async function connectToDatabase(): Promise<MongoClient> {
+  try {
+    const client = await connectWithRetry();
+    return client;
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('Failed to establish database connection', { error: errorMessage });
     throw error;
   }
 }
 
-
-let clientPromiseInstance: Promise<MongoClient>;
-
-export function clientPromise() {
+export function clientPromise(): Promise<MongoClient> {
   if (!clientPromiseInstance) {
     clientPromiseInstance = MongoClient.connect(MONGODB_URI);
   }
   return clientPromiseInstance;
 }
 
+let clientPromiseInstance: Promise<MongoClient>;
 
 process.on('SIGINT', async () => {
   if (cachedClient) {

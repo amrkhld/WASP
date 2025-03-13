@@ -1,188 +1,112 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
-import Image from 'next/image';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { redirect } from 'next/navigation';
-import { useSocket } from './hooks/useSocket';
-import ChatRooms from './components/ChatRooms';
+import { useRouter } from 'next/navigation';
 import ChatBox from './components/ChatBox';
-import MessageInput from './components/MessageInput';
-import { Message } from './types/message';
+import ChatRooms from './components/ChatRooms';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import LoadingState from './components/LoadingState';
+import { useSocket } from './hooks/useSocket';
+import { retryOperation } from './utils/retryOperation';
+import { api } from './utils/apiClient';
+import { logger } from './utils/logger';
 
-interface Room {
-  _id: string;
-  name: string;
-}
-
-interface MessageResponse {
-  _id: string;
-  id: string;
-  content: string;
-  roomId: string;
-  userId: string;
-  userName: string;
-  timestamp: string;
-}
-
-const HomePage = () => {
+export default function Home() {
   const { data: session, status } = useSession();
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  const { sendMessage, isConnected, messageQueue } = useSocket({
-    roomId: selectedRoom?._id || '',
+  const { isConnected, messages, sendMessage, messageQueue } = useSocket({
+    roomId: selectedRoom || '',
     userId: session?.user?.id || ''
   });
 
-  if (status === "unauthenticated") {
-    redirect("/auth/login");
-  }
-
-  const handleRoomSelect = async (room: Room) => {
-    setSelectedRoom(room);
-    setIsLoading(true);
-    if (isMobile) {
-      setIsSidePanelOpen(false);
-    }
-    
-    try {
-      const response = await fetch(`/api/messages/${room._id}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-
-      const typedMessages: Message[] = data.map((msg: MessageResponse) => ({
-        id: msg._id || msg.id,
-        content: msg.content,
-        roomId: msg.roomId,
-        userId: msg.userId,
-        userName: msg.userName || 'Unknown User',
-        timestamp: msg.timestamp,
-        messageId: msg._id
-      }));
-      setMessages(typedMessages);
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-      setMessages([]);
-    } finally {
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/auth/login');
+    } else if (status === 'authenticated') {
       setIsLoading(false);
     }
-  };
+  }, [status, router]);
 
-  const handleSendMessage = useCallback(async (content: string) => {
-    if (!selectedRoom || !session?.user?.id) return;
-
-    const messageData = {
-      content,
-      roomId: selectedRoom._id,
-      userId: session.user.id,
-      userName: session.user.name || 'Anonymous'
-    };
-
- 
-    sendMessage(content);
-
-
+  const handleRoomSelect = async (roomId: string) => {
     try {
-      await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(messageData),
+      await retryOperation(async () => {
+        // Attempt to join room with retry logic
+        await api.post(`/api/rooms/join/${roomId}`, {
+          userId: session?.user?.id
+        });
+        
+        setSelectedRoom(roomId);
+        setIsSidePanelOpen(false);
+      }, {
+        maxAttempts: 3,
+        baseDelay: 1000
       });
     } catch (error) {
-      console.error('Error persisting message:', error);
-    }
-  }, [selectedRoom, session, sendMessage]);
-
-  const toggleSidePanel = () => {
-    setIsSidePanelOpen(prev => {
-
-      if (!prev) {
-        document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = '';
-      }
-      return !prev;
-    });
-  };
-
-  const closeSidePanel = () => {
-    if (isMobile) {
-      setIsSidePanelOpen(false);
-      document.body.style.overflow = '';
+      logger.error('Failed to join room', {
+        roomId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      setError(error instanceof Error ? error : new Error('Failed to join room'));
     }
   };
 
+  const handleSendMessage = async (content: string) => {
+    try {
+      await sendMessage(content);
+    } catch (error) {
+      logger.error('Failed to send message', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      // Show error state in message queue
+    }
+  };
 
-  useEffect(() => {
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
+  if (status === 'loading' || isLoading) {
+    return <LoadingState type="fullscreen" message="INITIALIZING HIVE..." />;
+  }
+
+  if (error) {
+    return (
+      <div className="error-state">
+        <h2>Connection Error</h2>
+        <p>{error.message}</p>
+        <button onClick={() => window.location.reload()}>
+          Retry Connection
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div className="gradient-container">
-        <div className="floating-shape shape1"></div>
-        <div className="floating-shape shape2"></div>
-        <div className="floating-shape shape3"></div>
-      </div>
-      <div className={`page-container ${isSidePanelOpen && isMobile ? 'panel-open' : ''}`}>
+    <ErrorBoundary>
+      <div className={`page-container ${isSidePanelOpen ? 'panel-open' : ''}`}>
         <div className="main-content">
-          <div className="chatbox-wrapper">
-            <ChatBox 
-              messages={messages} 
-              roomName={selectedRoom?.name}
-              isLoading={isLoading}
-              isConnected={isConnected}
-              messageQueue={messageQueue}
-              onOpenRooms={toggleSidePanel}
-              isSidePanelOpen={isSidePanelOpen}
-            />
-            <MessageInput 
-              onSend={handleSendMessage}    
-              disabled={!selectedRoom || !isConnected}
-            />
-          </div>
+          <ChatBox
+            messages={messages}
+            roomName={selectedRoom || undefined}
+            isLoading={isLoading}
+            isConnected={isConnected}
+            messageQueue={messageQueue}
+            onOpenRooms={() => setIsSidePanelOpen(!isSidePanelOpen)}
+            isSidePanelOpen={isSidePanelOpen}
+            onSendMessage={handleSendMessage}
+          />
         </div>
-        
-        <aside 
-          className={`side-panel ${isSidePanelOpen ? 'open' : ''} ${isMobile ? 'mobile' : ''}`}
-          onClick={(e) => {
-
-            if (isMobile && e.target === e.currentTarget) {
-              closeSidePanel();
-            }
-          }}
-        >
-          <div className="side-panel-content">
-            <div className="logo-container">
-              <Image src="/assets/logoAlter.png" alt="Logo" width={48} height={48} />
-            </div>
-            <ChatRooms 
-              onRoomSelect={handleRoomSelect} 
-              onClose={isMobile ? closeSidePanel : undefined}
-            />
-          </div>
-        </aside>
+        <ErrorBoundary>
+          <ChatRooms
+            isOpen={isSidePanelOpen}
+            onClose={() => setIsSidePanelOpen(false)}
+            selectedRoom={selectedRoom || undefined}
+            onRoomSelect={handleRoomSelect}
+          />
+        </ErrorBoundary>
       </div>
-    </>
+    </ErrorBoundary>
   );
-};
-
-export default HomePage;
+}

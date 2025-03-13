@@ -4,6 +4,8 @@ import { Message } from '../types/message';
 import type { MessageQueue } from '../types/message';
 import Radio from './Radio';
 import ConnectionStatus from './ConnectionStatus';
+import { ErrorBoundary } from './ErrorBoundary';
+import { logger } from '../utils/logger';
 
 interface ChatBoxProps {
   messages: Message[];
@@ -58,83 +60,116 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   };
 
   const getMessageKey = (message: Message): string => {
-
     return `${message.messageId}-${message.timestamp}`;
   };
 
   if (!roomName) {
     return (
       <div className={`chat-box-empty ${isExiting ? 'exiting' : ''}`}>
-        <button 
-          className={`room-select-toggle ${isSidePanelOpen ? 'open' : ''}`}
-          onClick={onOpenRooms}
-          aria-label={`${isSidePanelOpen ? 'Close' : 'Open'} room selection`}
-        >
-          {isSidePanelOpen ? '×' : '≡'}<p>FIND NESTS</p>
-        </button>
-        <Radio mode="fullscreen" />
+        <ErrorBoundary>
+          <button 
+            className={`room-select-toggle ${isSidePanelOpen ? 'open' : ''}`}
+            onClick={onOpenRooms}
+            aria-label={`${isSidePanelOpen ? 'Close' : 'Open'} room selection`}
+          >
+            {isSidePanelOpen ? '×' : '≡'}<p>FIND NESTS</p>
+          </button>
+        </ErrorBoundary>
+        <ErrorBoundary>
+          <Radio mode="fullscreen" />
+        </ErrorBoundary>
       </div>
     );
   }
 
+  const renderConnectionStatus = () => {
+    if (isReconnecting) {
+      return (
+        <div className="reconnecting-overlay">
+          <div className="reconnecting-content">
+            <div className="spinner"></div>
+            <p>RECONNECTING TO HIVE...</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="retry-button"
+            >
+              Retry Now
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderMessages = () => {
+    if (isLoading) {
+      return <div className="loading-message">INITIALIZING NECTAR STREAMS...</div>;
+    }
+
+    if (messages.length === 0) {
+      return <p className="no-messages">VACANT NESTING ZONE</p>;
+    }
+
+    return messages.map((message) => {
+      const queuedMessage = messageQueue[message.messageId];
+      const messageStatus = queuedMessage?.status;
+      
+      return (
+        <div 
+          key={getMessageKey(message)}
+          className={`message ${message.userId === session?.user?.id ? 'message-own' : ''}`}
+        >
+          <span className="message-user">{message.userName || 'User'}&nbsp;&nbsp;| </span>
+          <span className="message-content">{message.content}</span>
+          <span className="message-meta">
+            <span className="message-timestamp">{formatMessageTime(message.timestamp)}</span>
+            {messageStatus && (
+              <span className={`message-status ${messageStatus}`}>
+                {messageStatus === 'pending' ? '⌛' : messageStatus === 'delivered' ? '✓' : '⚠️'}
+              </span>
+            )}
+          </span>
+        </div>
+      );
+    });
+  };
+
   return (
     <div className={`chat-box ${isExiting ? 'exiting' : ''}`}>
-      <div className="chat-box-header">
-        <div className="header-content">
-          <h2 className="room-name">
-            <button 
-              className={`room-select-toggle ${isSidePanelOpen ? 'open' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenRooms?.();
-              }}
-              aria-label={`${isSidePanelOpen ? 'Close' : 'Open'} room selection`}
-            >
-              {isSidePanelOpen ? '×' : '≡'}
-            </button>
-            {roomName}
-          </h2>
-          <ConnectionStatus isConnected={isConnected} />
+      <ErrorBoundary>
+        <div className="chat-box-header">
+          <div className="header-content">
+            <h2 className="room-name">
+              <button 
+                className={`room-select-toggle ${isSidePanelOpen ? 'open' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenRooms?.();
+                }}
+                aria-label={`${isSidePanelOpen ? 'Close' : 'Open'} room selection`}
+              >
+                {isSidePanelOpen ? '×' : '≡'}
+              </button>
+              {roomName}
+            </h2>
+            <ConnectionStatus isConnected={isConnected} />
+          </div>
+          <ErrorBoundary>
+            <Radio mode="minimal" roomName={roomName} />
+          </ErrorBoundary>
         </div>
-        <Radio mode="minimal" roomName={roomName} />
-      </div>
-      <div className="messages-wrapper">
-        <div className="messages-container">
-          {isReconnecting ? (
-            <div className="reconnecting-message">RECONNECTING TO HIVE...</div>
-          ) : isLoading ? (
-            <div className="loading-message">INITIALIZING NECTAR STREAMS...</div>
-          ) : messages.length === 0 ? (
-            <p className="no-messages">VACANT NESTING ZONE</p>
-          ) : (
-            <>
-              {messages.map((message) => {
-                const queuedMessage = messageQueue[message.messageId];
-                const messageStatus = queuedMessage?.status;
-                
-                return (
-                  <div 
-                    key={getMessageKey(message)}
-                    className={`message ${message.userId === session?.user?.id ? 'message-own' : ''}`}
-                  >
-                    <span className="message-user">{message.userName || 'User'}&nbsp;&nbsp;| </span>
-                    <span className="message-content">{message.content}</span>
-                    <span className="message-meta">
-                      <span className="message-timestamp">{formatMessageTime(message.timestamp)}</span>
-                      {messageStatus && (
-                        <span className={`message-status ${messageStatus}`}>
-                          {messageStatus === 'pending' ? '⌛' : messageStatus === 'delivered' ? '✓' : '⚠️'}
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} /> 
-            </>
-          )}
+      </ErrorBoundary>
+
+      <ErrorBoundary>
+        <div className="messages-wrapper">
+          <div className="messages-container">
+            {renderConnectionStatus()}
+            {renderMessages()}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      </div>
+      </ErrorBoundary>
     </div>
   );
 };

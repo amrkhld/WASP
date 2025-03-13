@@ -4,7 +4,8 @@ import { useEffect, useCallback } from "react";
 import { useRadio } from "../contexts/RadioContext";
 import { useAudio } from "../contexts/AudioContext";
 import { RadioMode } from "../types/radio";
-import { YouTubePlayerState } from "../types/youtube";
+import { YouTubePlayerState, YouTubePlayer, YouTubeStream } from "../types/youtube";
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface RadioProps {
   mode: RadioMode;
@@ -33,7 +34,7 @@ export default function Radio({ mode }: RadioProps) {
       const response = await fetch('/api/youtube/random');
       if (!response.ok) throw new Error('Failed to fetch stream');
       const data = await response.json();
-      setCurrentStream(data);
+      setCurrentStream(data as YouTubeStream);
     } catch (error) {
       console.error('Error fetching stream:', error);
       setError('Failed to fetch stream');
@@ -167,8 +168,7 @@ export default function Radio({ mode }: RadioProps) {
     }
   };
 
-
-  const isMinimal = mode === ("minimal" as RadioMode);
+  const isMinimal = mode === "minimal";
 
   if (error) {
     return (
@@ -227,40 +227,46 @@ export default function Radio({ mode }: RadioProps) {
   }
 
   return (
-    <div className={`radio-container ${mode}`}>
-      <div className="stream-player">
-        <div className="video-overlay"></div>
-        <div
-          id={`youtube-player-${currentStream?.id.videoId}`}
-          className={isMinimal ? "minimal-player" : "fullscreen-player"}
-        />
+    <ErrorBoundary fallback={
+      <div className="p-4 text-amber-800 bg-amber-50 rounded-lg">
+        Radio player temporarily unavailable
       </div>
+    }>
+      <div className={`radio-container ${mode}`}>
+        <div className="stream-player">
+          <div className="video-overlay"></div>
+          <div
+            id={`youtube-player-${currentStream?.id.videoId}`}
+            className={isMinimal ? "minimal-player" : "fullscreen-player"}
+          />
+        </div>
 
-      <div className={`stream-info ${mode}`}>
-        {mode === "fullscreen" && (
-          <div className="stream-channel-container">
-            <span className="now-streaming">NOW STREAMING</span>
-            <span className="stream-channel">
-              {currentStream.snippet.channelTitle}
-            </span>
-          </div>
-        )}
-        <div className="audio-control">
-          <label className="custom-checkbox">
-            <span onClick={toggleMute} className="checkbox-symbol">
-              {isMuted ? "⬡" : "⬣"}
-            </span>
-            {mode === "fullscreen" && (
-              <span
-                key={isMuted ? "muted" : "unmuted"}
-                className="checkbox-label"
-              >
-                {isMuted ? "AUDIO DISENGAGED" : "AUDIO STREAM ENGAGED"}
+        <div className={`stream-info ${mode}`}>
+          {mode === "fullscreen" && (
+            <div className="stream-channel-container">
+              <span className="now-streaming">NOW STREAMING</span>
+              <span className="stream-channel">
+                {currentStream.snippet.channelTitle}
               </span>
-            )}
-          </label>
+            </div>
+          )}
+          <div className="audio-control">
+            <label className="custom-checkbox">
+              <span onClick={toggleMute} className="checkbox-symbol">
+                {isMuted ? "⬡" : "⬣"}
+              </span>
+              {mode === "fullscreen" && (
+                <span
+                  key={isMuted ? "muted" : "unmuted"}
+                  className="checkbox-label"
+                >
+                  {isMuted ? "AUDIO DISENGAGED" : "AUDIO STREAM ENGAGED"}
+                </span>
+              )}
+            </label>
+          </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 }

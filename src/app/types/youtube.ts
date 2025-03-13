@@ -57,15 +57,15 @@ export interface YouTubePlayerVars {
 }
 
 export interface YouTubePlayer {
-  playVideo(): void;
-  pauseVideo(): void;
-  mute(): void;
-  unMute(): void;
-  isMuted(): boolean;
-  setVolume(volume: number): void;
-  getVolume(): number;
-  getPlayerState(): number;
-  destroy(): void;
+  destroy: () => void;
+  loadVideoById: (videoId: string) => Promise<void>;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  mute: () => void;
+  unMute: () => void;
+  setVolume: (volume: number) => void;
+  getVolume: () => number;
+  isMuted: () => boolean;
 }
 
 export interface YouTubePlayerEvent {
@@ -90,6 +90,27 @@ export enum YouTubePlayerState {
   PAUSED = 2,
   BUFFERING = 3,
   CUED = 5
+}
+
+export interface YouTubeVideo {
+  id: {
+    videoId: string;
+  };
+  snippet: {
+    title: string;
+    channelTitle: string;
+    description: string;
+    thumbnails: {
+      default: { url: string; };
+      medium: { url: string; };
+      high: { url: string; };
+    };
+  };
+}
+
+export interface YouTubeError {
+  data: number;
+  target: YouTubePlayer;
 }
 
 declare global {

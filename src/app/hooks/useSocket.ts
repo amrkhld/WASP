@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import socketio from 'socket.io-client';
-import type { Message } from '../types/message';
+import { io, Socket } from 'socket.io-client';
+import { useSession } from 'next-auth/react';
+import { retryOperation } from '../utils/retryOperation';
+import { logger } from '../utils/logger';
 
 interface UseSocketProps {
   roomId: string;
@@ -11,71 +13,76 @@ interface UseSocketProps {
 
 interface MessageQueue {
   [key: string]: {
-    message: Message;
+    content: string;
+    timestamp: string;
     status: 'pending' | 'delivered' | 'failed';
-    timestamp: number;
+    retryCount: number;
   };
 }
 
+const MAX_OFFLINE_MESSAGES = 100;
+const RECONNECTION_ATTEMPTS = 5;
+const RECONNECTION_DELAY = 1000;
+
 export const useSocket = ({ roomId, userId }: UseSocketProps) => {
+  const { data: session } = useSession();
   const [isConnected, setIsConnected] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [messages, setMessages] = useState<any[]>([]);
   const [messageQueue, setMessageQueue] = useState<MessageQueue>({});
-  const socketRef = useRef<ReturnType<typeof socketio> | null>(null);
-  const messageCountRef = useRef(0);
+  const socketRef = useRef<Socket | null>(null);
+  const offlineMessagesRef = useRef<any[]>([]);
 
-  const processMessageQueue = useCallback((currentTime: number) => {
-    setMessageQueue(prevQueue => {
-      const newQueue = { ...prevQueue };
-      let hasChanges = false;
+  const connect = useCallback(async () => {
+    if (!session) return;
 
-      Object.entries(newQueue).forEach(([, entry]) => {
-        if (entry.status === 'pending' && currentTime - entry.timestamp > 5000) {
-          entry.status = 'failed';
-          hasChanges = true;
-        }
-      });
-
-      return hasChanges ? newQueue : prevQueue;
-    });
-  }, []);
-
-  const connect = useCallback(() => {
-    if (!socketRef.current) {
-      const socket = socketio(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
+    try {
+      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001', {
+        reconnection: true,
+        reconnectionAttempts: RECONNECTION_ATTEMPTS,
+        reconnectionDelay: RECONNECTION_DELAY,
+        reconnectionDelayMax: RECONNECTION_DELAY * 2,
+        timeout: 10000,
         query: { roomId, userId }
       });
 
       socket.on('connect', () => {
         setIsConnected(true);
+        setIsReconnecting(false);
+        processOfflineMessages();
       });
 
-      socket.on('disconnect', () => {
+      socket.on('disconnect', (reason) => {
         setIsConnected(false);
+        logger.warn('Socket disconnected', { reason });
       });
 
-      socket.on('messages', (messages: Message[]) => {
-        setMessages(messages);
+      socket.on('reconnect_attempt', (attemptNumber) => {
+        setIsReconnecting(true);
+        logger.info('Attempting to reconnect', { attemptNumber });
       });
 
-      socket.on('message', (message: Message) => {
-        setMessages(prev => [...prev, message]);
-        messageCountRef.current += 1;
+      socket.on('reconnect_failed', () => {
+        setIsReconnecting(false);
+        logger.error('Failed to reconnect after maximum attempts');
       });
 
-      socket.on('messageAck', (messageId: string) => {
-        setMessageQueue(prev => {
-          const newQueue = { ...prev };
-          if (newQueue[messageId]) {
-            newQueue[messageId].status = 'delivered';
-          }
-          return newQueue;
-        });
+      socket.on('message', (message) => {
+        setMessages((prev) => [...prev, message]);
+        saveMessageToLocalStorage(message);
       });
 
       socketRef.current = socket;
+
+      // Load cached messages from localStorage
+      loadCachedMessages();
+    } catch (error) {
+      logger.error('Socket connection error', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      setIsConnected(false);
     }
-  }, [roomId, userId]);
+  }, [roomId, userId, session]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
@@ -85,61 +92,145 @@ export const useSocket = ({ roomId, userId }: UseSocketProps) => {
     }
   }, []);
 
-  const sendMessage = useCallback((content: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (!socketRef.current?.connected) {
-        reject(new Error('Socket not connected'));
-        return;
+  const saveMessageToLocalStorage = (message: any) => {
+    try {
+      const cachedMessages = JSON.parse(localStorage.getItem(`room_${roomId}`) || '[]');
+      cachedMessages.push(message);
+      
+      // Limit cached messages
+      if (cachedMessages.length > MAX_OFFLINE_MESSAGES) {
+        cachedMessages.shift();
       }
+      
+      localStorage.setItem(`room_${roomId}`, JSON.stringify(cachedMessages));
+    } catch (error) {
+      logger.error('Failed to cache message', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
 
-      const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const message: Message = {
-        id: messageId,
+  const loadCachedMessages = () => {
+    try {
+      const cachedMessages = JSON.parse(localStorage.getItem(`room_${roomId}`) || '[]');
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+      }
+    } catch (error) {
+      logger.error('Failed to load cached messages', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
+
+  const processOfflineMessages = async () => {
+    if (offlineMessagesRef.current.length === 0) return;
+
+    for (const message of offlineMessagesRef.current) {
+      try {
+        await sendMessage(message.content);
+        const index = offlineMessagesRef.current.indexOf(message);
+        offlineMessagesRef.current.splice(index, 1);
+      } catch (error) {
+        logger.error('Failed to send offline message', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+          message
+        });
+      }
+    }
+  };
+
+  const sendMessage = async (content: string) => {
+    const messageId = Date.now().toString();
+    const messageData = {
+      id: messageId,
+      content,
+      userId,
+      roomId,
+      timestamp: new Date().toISOString()
+    };
+
+    setMessageQueue(prev => ({
+      ...prev,
+      [messageId]: {
         content,
-        userId,
-        userName: 'User', // This should be set by the server
-        roomId,
-        timestamp: new Date().toISOString(),
-        messageId
-      };
+        timestamp: messageData.timestamp,
+        status: 'pending',
+        retryCount: 0
+      }
+    }));
+
+    if (!isConnected) {
+      offlineMessagesRef.current.push(messageData);
+      saveMessageToLocalStorage({
+        ...messageData,
+        offline: true
+      });
+      return;
+    }
+
+    try {
+      await retryOperation(async () => {
+        return new Promise((resolve, reject) => {
+          if (!socketRef.current?.connected) {
+            reject(new Error('Socket not connected'));
+            return;
+          }
+
+          socketRef.current.emit('message', messageData, (response: any) => {
+            if (response.success) {
+              resolve(response);
+            } else {
+              reject(new Error(response.error || 'Failed to send message'));
+            }
+          });
+        });
+      }, {
+        maxAttempts: 3,
+        shouldRetry: (error) => {
+          return error.message === 'Socket not connected' || error.message.includes('timeout');
+        }
+      });
 
       setMessageQueue(prev => ({
         ...prev,
         [messageId]: {
-          message,
-          status: 'pending',
-          timestamp: Date.now()
+          ...prev[messageId],
+          status: 'delivered'
+        }
+      }));
+    } catch (error) {
+      logger.error('Failed to send message', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        messageId
+      });
+
+      setMessageQueue(prev => ({
+        ...prev,
+        [messageId]: {
+          ...prev[messageId],
+          status: 'failed'
         }
       }));
 
-      socketRef.current.emit('message', message, (response: { success: boolean }) => {
-        if (response.success) {
-          resolve();
-        } else {
-          reject(new Error('Failed to send message'));
-        }
-      });
-    });
-  }, [roomId, userId]);
+      if (!isConnected) {
+        offlineMessagesRef.current.push(messageData);
+      }
+    }
+  };
 
   useEffect(() => {
     connect();
-    return () => disconnect();
+    return () => {
+      disconnect();
+    };
   }, [connect, disconnect]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      processMessageQueue(Date.now());
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [processMessageQueue]);
 
   return {
     isConnected,
+    isReconnecting,
     messages,
     sendMessage,
-    messageQueue,
-    messageCount: messageCountRef.current
+    messageQueue
   };
 };

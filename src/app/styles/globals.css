@@ -185,6 +185,233 @@ body {
   }
 }
 
+/* Connection Status Animations */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.reconnecting-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.3s ease;
+  z-index: 100;
+}
+
+.reconnecting-content {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  padding: 2rem;
+  border-radius: 8px;
+  text-align: center;
+  color: #fff;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s ease-in-out infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.retry-button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.retry-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.error-boundary {
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 8px;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  color: #f44336;
+  animation: fadeIn 0.3s ease;
+}
+
+/* Connection Status Component */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+.status-indicator.connected { background-color: #4CAF50; }
+.status-indicator.disconnected { background-color: #F44336; }
+.status-indicator.reconnecting {
+  background-color: #FFC107;
+  animation: pulse 1.5s infinite;
+}
+
+/* Enhanced Connection Status */
+.connection-status-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.connection-status.connected .status-indicator {
+  background: #4CAF50;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
+.connection-status.disconnected .status-indicator {
+  background: #F44336;
+  box-shadow: 0 0 8px rgba(244, 67, 54, 0.5);
+}
+
+.connection-status.reconnecting .status-indicator {
+  background: #FFC107;
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.5);
+  animation: pulse 1.5s infinite;
+}
+
+.connection-status.rate-limited .status-indicator {
+  background: #FF9800;
+  box-shadow: 0 0 8px rgba(255, 152, 0, 0.5);
+}
+
+.status-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.rate-limit-info {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.status-message {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  animation: fadeInDown 0.3s ease;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Rate Limit Warning */
+.rate-limit-warning {
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.2);
+  color: #FF9800;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 8px 0;
+  animation: fadeIn 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rate-limit-warning::before {
+  content: "⚠️";
+  font-size: 14px;
+}
+
+/* Message Status Indicators */
+.message-status {
+  font-size: 12px;
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+.message-status.pending { color: #FFC107; }
+.message-status.delivered { color: #4CAF50; }
+.message-status.failed { color: #F44336; }
+
+/* Loading States */
+.loading-message {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.7);
+  animation: pulse 2s infinite;
+}
 
 .page-container {
   position: relative;
@@ -1583,6 +1810,147 @@ p.now-streaimg {
   display: none;
 }
 
+/* Message Queue Status */
+.message-queue-status {
+  position: absolute;
+  top: -30px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  animation: fadeInDown 0.3s ease;
+}
+
+.pending-count {
+  color: #FFC107;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pending-count::before {
+  content: "⏳";
+}
+
+.failed-count {
+  color: #FF3B30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.failed-count::before {
+  content: "⚠️";
+}
+
+/* Message Status Indicators */
+.message {
+  position: relative;
+}
+
+.message[data-status="pending"]::after {
+  content: "⏳";
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  animation: pulse 1.5s infinite;
+}
+
+.message[data-status="failed"]::after {
+  content: "⚠️";
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+}
+
+.message[data-status="delivered"]::after {
+  content: "✓";
+  position: absolute;
+  right: -20px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: #4CAF50;
+}
+
+.message.offline {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.message.offline::before {
+  content: "📡";
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+/* Enhanced Connection Status */
+.connection-status.offline {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+  animation: pulse 2s infinite;
+}
+
+.connection-status.reconnecting {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.connection-status-badge {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: slideInDown 0.3s ease;
+}
+
+.connection-status-badge.offline {
+  background: rgba(244, 67, 54, 0.9);
+  color: white;
+}
+
+.connection-status-badge.reconnecting {
+  background: rgba(255, 193, 7, 0.9);
+  color: black;
+}
+
+@keyframes slideInDown {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Offline Mode Input Styles */
+.message-input-container.offline .message-input {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-color: rgba(244, 67, 54, 0.3);
+}
+
+.message-input-container.offline .message-input::placeholder {
+  color: rgba(244, 67, 54, 0.6);
+}
+
+.message-input-container.offline .send-button::before {
+  color: rgba(244, 67, 54, 0.4);
+}
 
 @media (max-width: 768px) {
 
